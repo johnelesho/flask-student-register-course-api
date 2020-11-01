@@ -104,9 +104,32 @@ def get_all_students():
     })
 
 
-@app.route('/student/', methods=['GET'])
-def get_one_student():
-    return ""
+
+@app.route('/student/<stud_reg_no>', methods=['GET'])
+def get_one_student(stud_reg_no):
+    
+    new_student = Student.query.filter_by(reg_no=stud_reg_no).first()
+    if not new_student:
+        message = "Could not Fetch student details"
+        student_data={}
+        courses=""
+    else:
+        message = "Student Details"
+        student_data = {}
+        student_data['id'] = new_student.id
+        student_data['reg_no'] = new_student.reg_no
+        student_data['username'] = new_student.username
+        student_data['password'] = new_student.password
+        courses = new_student.courses.split(',')
+        student_data['courses'] = [course.strip() for course in courses ]
+        student_data['is_team_lead'] = new_student.is_team_lead
+        
+    return jsonify({
+    "message": message,
+    "Data" : student_data,
+    "No of Registered Courses": len(courses)
+    })
+
 
 @app.route('/student/<reg_no>', methods=['PUT'])
 def make_student_team_lead(reg_no):
