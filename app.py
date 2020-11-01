@@ -33,7 +33,7 @@ def create_new_student():
     new_student_regno = data['reg_no']
     new_student_username = data['username']
     new_student_password= generate_password_hash(data['reg_no'], method='sha256')
-    new_student_courses = str(data['courses'])
+    new_student_courses = str(data['courses']).upper()
     if not 'is_team_lead' in data:
         new_student_team_lead = False
     else:
@@ -58,12 +58,13 @@ def create_new_student():
     student_data['username'] = new_student.username
     student_data['password'] = new_student.password
     courses = new_student.courses.split(',')
-    student_data['courses'] = [course.strip().upper() for course in courses ]
+    student_data['courses'] = [course.strip() for course in courses ]
     student_data['is_team_lead'] = new_student.is_team_lead
     
     return jsonify({
     "message": message,
-    "Data" : student_data
+    "Data" : student_data,
+    "No of Registered Courses": len(courses)
     })
 
     
@@ -75,7 +76,33 @@ def create_new_student():
 
 @app.route('/student/', methods=['GET'])
 def get_all_students():
-    return ""
+    
+    students = Student.query.all()
+    output=[]
+    if not students:
+        message = "\n Could not Fetch student details"
+    else:
+        message = "List of Registered Students"
+        count = len(students)
+        for student in students:
+            student_data = {}
+            student_data['id'] = student.id
+            student_data['reg_no'] = student.reg_no
+            student_data['username'] = student.username
+            student_data['password'] = student.password
+            # if students.courses:
+            courses = student.courses.split(',')
+            student_data['courses'] = [course.strip() for course in courses ]
+            student_data['is_team_lead'] = student.is_team_lead
+            output.append(student_data)
+
+    
+    return jsonify({
+    "message": message,
+    "Data" : output,
+    "Total Registered": count
+    })
+
 
 @app.route('/student/', methods=['GET'])
 def get_one_student():
