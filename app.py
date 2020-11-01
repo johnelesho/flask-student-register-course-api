@@ -67,10 +67,6 @@ def create_new_student():
     "No of Registered Courses": len(courses)
     })
 
-    
-    
-
-       
 
 
 
@@ -133,15 +129,121 @@ def get_one_student(stud_reg_no):
 
 @app.route('/student/<reg_no>', methods=['PUT'])
 def make_student_team_lead(reg_no):
-    return ""
+    
+    student = Student.query.filter_by(reg_no=reg_no).first()
+    if not student:
+        message = "Could not Fetch student details"
+           
+    else:
+        message = "Student now a team lead"
+        student.is_team_lead = True
+        db.session.commit()
+       
+        
+    return jsonify({
+    "message": message,
+    
+    })
 
-@app.route('/student/<reg_no>/<is_team_lead>', methods=['PUT'])
-def change_student_detail(reg_no, is_team_lead):
-    return ""
+@app.route('/student/<reg_no>/courses', methods=['GET'])
+def get_student_courses(reg_no):
+    
+    student = Student.query.filter_by(reg_no=reg_no).first()
+    if not student:
+        message = "Could not Fetch student details"
+        count = 0
+        courses =[]
+           
+    else:
+        message = "Courses Registered by Students"
+        courses = student.courses.split(',')
+        courses= [course.strip() for course in courses ]
+        count = len(courses)
+        
+        
+    return jsonify({
+    "message": message,
+    "Total Courses": count,
+    "Courses" : courses
+    
+    })
+
+@app.route('/student/<reg_no>/courses', methods=['POST'])
+def register_student_courses(reg_no):
+    
+    student = Student.query.filter_by(reg_no=reg_no).first()
+    if not student:
+        message = "Could not Fetch student details"
+        count = 0
+        courses =[]
+           
+    else:
+        courses = student.courses #.split(',')
+        data = request.get_json()
+        count = len(courses)  
+        if "courses" in data:
+            new_courses = data['courses']
+            # courses.append(new_courses)
+            courses += ","  + new_courses.upper() 
+            # courses= [course.strip() for course in courses ]
+            student.courses = str(courses)
+            # count = len([course.strip() for course in courses ])
+            
+            db.session.commit()
+            student = Student.query.filter_by(reg_no=reg_no).first()
+            courses = [course.strip() for course in student.courses.split(',')]
+            count = len(courses)
+            message = "New Courses Registered by Student"
+        else:
+            message = "New Courses not supplied, returning already registered courses"
+        
+    return jsonify({
+    "message": message,
+    "Total Courses": count,
+    "Courses" : courses
+    
+    })
+
+# @app.route('/student/<reg_no>', methods=['PUT'])
+# def remove_student_from_team_lead(reg_no):
+    
+#     student = Student.query.filter_by(reg_no=reg_no).first()
+#     if not student:
+#         message = "Could not Fetch student details"
+           
+#     else:
+#         message = "Student removed from being a team lead"
+#         student.is_team_lead = False
+#         db.session.commit()
+       
+        
+#     return jsonify({
+#     "message": message,
+    
+#     })
+
+# @app.route('/student/<reg_no>/<is_team_lead>', methods=['PUT'])
+# def change_student_detail(reg_no, is_team_lead):
+#     return ""
 
 @app.route('/student/<reg_no>', methods=['DELETE'])
 def remove_student(reg_no):
-    return ""
+    student = Student.query.filter_by(reg_no=reg_no).first()
+    if not student:
+        message = "Could not Fetch student details"
+    else:
+        db.session.delete(student)
+        db.session.commit()
+        message = "Students details has been removed from the database"
+       
+        
+        
+    return jsonify({
+    "message": message,
+         
+    })
+
+    
 
 
 # Course route
