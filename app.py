@@ -1,6 +1,7 @@
 from enum import unique
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import generate_password_hash
 
 
 app = Flask(__name__)
@@ -28,7 +29,48 @@ class Course(db.Model):
 # student route
 @app.route('/student/', methods=['POST'])
 def create_new_student():
-    return ""
+    data = request.get_json()
+    new_student_regno = data['reg_no']
+    new_student_username = data['username']
+    new_student_password= generate_password_hash(data['reg_no'], method='sha256')
+    new_student_courses = str(data['courses'])
+    if not 'is_team_lead' in data:
+        new_student_team_lead = False
+    else:
+        new_student_team_lead =data['team_lead']
+
+    new_student = Student(reg_no= new_student_regno, username=new_student_username, password=new_student_password, courses=new_student_courses, is_team_lead = new_student_team_lead)
+    try:
+        db.session.add(new_student)
+        db.session.commit()
+        message = "New Students Registered"
+    except:
+        message = "Could Not Register The Student"
+    
+    new_student = Student.query.filter_by(reg_no=new_student_regno).first()
+    if not new_student:
+        message += "\n Could not Fetch student details"
+        student_data={}
+
+    student_data = {}
+    student_data['id'] = new_student.id
+    student_data['reg_no'] = new_student.reg_no
+    student_data['username'] = new_student.username
+    student_data['password'] = new_student.password
+    courses = new_student.courses.split(',')
+    student_data['courses'] = [course.strip().upper() for course in courses ]
+    student_data['is_team_lead'] = new_student.is_team_lead
+    
+    return jsonify({
+    "message": message,
+    "Data" : student_data
+    })
+
+    
+    
+
+       
+
 
 
 @app.route('/student/', methods=['GET'])
@@ -40,7 +82,7 @@ def get_one_student():
     return ""
 
 @app.route('/student/<reg_no>', methods=['PUT'])
-def change_student_detail(reg_no):
+def make_student_team_lead(reg_no):
     return ""
 
 @app.route('/student/<reg_no>/<is_team_lead>', methods=['PUT'])
@@ -53,17 +95,17 @@ def remove_student(reg_no):
 
 
 # Course route
-@app.route('/student/', methods=['POST'])
-def create_new_student():
+@app.route('/course/', methods=['POST'])
+def create_new_course():
     return ""
 
 
-@app.route('/student/', methods=['GET'])
+@app.route('/course/', methods=['GET'])
 def get_all_courses():
     return ""
 
-@app.route('/course/', methods=['GET'])
-def get_one_course():
+@app.route('/course/<course_code>', methods=['GET'])
+def get_one_course(course_code):
     return ""
 
 @app.route('/course/<course_code>', methods=['PUT'])
