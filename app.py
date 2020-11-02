@@ -120,7 +120,7 @@ def create_new_student(current_student):
     try:
         db.session.add(new_student)
         db.session.commit()
-        message = "New Students Registered"
+        message = "New Students Registered."
     except:
         message = "Could Not Register The Student."
     
@@ -142,7 +142,7 @@ def create_new_student(current_student):
             no_courses = len(student_data['courses'])
             
     except:
-        message += " Hence Could not Fetch student details"
+        message += " Could not Fetch student details"
         student_data={}
         no_courses = 0
         
@@ -174,10 +174,12 @@ def get_all_students(current_student):
             student_data['reg_no'] = student.reg_no
             student_data['username'] = student.username
             student_data['password'] = student.password
-            if not 'courses' in students:
+
+            if student.courses==None:
                 courses = []
             else:
                 courses = student.courses.split(',')
+
             student_data['courses'] = [course.strip() for course in courses ]
             student_data['is_team_lead'] = student.is_team_lead
             output.append(student_data)
@@ -287,12 +289,60 @@ def register_student_courses(current_student):
             # count = len([course.strip() for course in courses ])
             
             db.session.commit()
-            student = Student.query.filter_by(reg_no=reg_no).first()
+            student = Student.query.filter_by(reg_no=current_student.reg_no).first()
             courses = [course.strip() for course in student.courses.split(',')]
             count = len(courses)
             message = "New Courses Registered by Student"
         else:
             message = "New Courses not supplied, returning already registered courses"
+        
+    return jsonify({
+    "message": message,
+    "Total Courses": count,
+    "Courses" : courses
+    
+    })
+
+
+@app.route('/student/courses', methods=['DELETE'])
+@get_authorization
+def delete_courses(current_student):
+    
+    student = Student.query.filter_by(reg_no=current_student.reg_no).first()
+    if not student:
+        message = "Could not Fetch student details"
+        count = 0
+        courses =[]
+           
+    else:
+        courses = [course.strip().upper() for course in student.courses.split(',')]
+        print(courses)
+        # print(student.courses)
+        data = request.get_json()
+        count = len(courses)  
+        if "courses" in data:
+            new_courses = [course.strip().upper() for course in data['courses'].split(',')]
+            data['courses'].split(',')
+            
+            # courses.append(new_courses)
+            for c in new_courses:
+                if c in courses:
+                    courses.remove(c)
+            
+            courses_now = ",".join(courses)
+
+            # # courses= [course.strip() for course in courses ]
+            student.courses = courses_now
+            # [].
+            # count = len([course.strip() for course in courses ])
+            
+            db.session.commit()
+            student = Student.query.filter_by(reg_no=current_student.reg_no).first()
+            courses = [course.strip() for course in student.courses.split(',')]
+            count = len(courses)
+            message = "New Courses Registered by Student"
+        else:
+            message = "Courses to be removed not supplied, returning already registered courses"
         
     return jsonify({
     "message": message,
@@ -329,7 +379,7 @@ def remove_student(current_student, reg_no):
     if not current_student.is_team_lead:
             return jsonify({"message": "Cannot perform that function"})  
    
-    student = Student.query.filter_by(reg_no=reg_no).first()
+    student = Student.query.filter_by(reg_no=reg_no).first() or Student.query.filter_by(username=reg_no).first()
     if not student:
         message = "Could not Fetch student details"
     else:
