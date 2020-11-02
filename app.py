@@ -1,12 +1,16 @@
 from enum import unique
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, make_response
 from flask_sqlalchemy import SQLAlchemy
-from werkzeug.security import generate_password_hash
-
+import uuid
+from werkzeug.security import generate_password_hash, check_password_hash
+import jwt
+import datetime
+from functools import wraps
+import os
 
 app = Flask(__name__)
-app.config['SECRET']= 'elesho'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///studcourse.db'
+app.config['SECRET_KEY']= os.urandom(16)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///studcourseapi.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = True
 
 db = SQLAlchemy(app)
@@ -14,8 +18,8 @@ db = SQLAlchemy(app)
 
 class Student(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    reg_no = db.Column(db.String(11), unique=True, nullable=False)
-    username = db.Column(db.String(50), unique=True, nullable=False)
+    reg_no = db.Column(db.Integer, unique=True, nullable=False)
+    username = db.Column(db.String(50), unique= True, nullable=False)
     password = db.Column(db.String(50), nullable=False)
     courses = db.Column(db.String(100), nullable=True)
     is_team_lead = db.Column(db.Boolean, default=False, nullable=False)
@@ -26,14 +30,87 @@ class Course(db.Model):
     course_title = db.Column(db.String(50), unique=True, nullable=False)
     course_unit = db.Column(db.Integer, nullable=False, default=1)
 
+
+
+def get_authorization(f):
+    @wraps(f)
+    def decorator(*args, **kwargs):
+
+      token = None
+
+      if 'x-access-tokens' in request.headers:
+         token = request.headers['x-access-tokens']
+
+      if not token:
+         return jsonify({'message': 'a valid token is missing'}), 401
+
+      try:
+         data = jwt.decode(token, app.config['SECRET_KEY'])
+         current_student = Student.query.filter_by(reg_no=data['reg_no']).first() or Student.query.filter_by(username=data['username']).first()
+      except:
+         return jsonify({'message': 'token is invalid'}), 401
+
+      return f(current_student, *args, **kwargs)
+    return decorator
+
+
+#Students Login to get the authorization
+@app.route('/login')
+def login():
+    auth = request.authorization
+
+# if there is no authentication information
+    if not auth or not auth.username or not auth.password:
+        return make_response('Login details not available', 401, {'WWW-Authentication': 'Basic realm="Login required"'})
+
+# if the authenticated details[username] is in the database 
+    stud = Student.query.filter_by(username=auth.username).first() or Student.query.filter_by(reg_no=auth.username).first()
+    print("student: ", stud)
+    # if stud == None:
+    #     stud = Student.query.filter_by(reg_no=auth.username).first()
+    #     print("student: ", stud.username)
+    if not stud:
+         return make_response('Login Error, Check your username', 401, {'WWW-Authentication': 'Basic realm="Login required"'})
+
+# if the authenticated details[password] matches 
+    if check_password_hash(stud.password, auth.password):
+            token = jwt.encode({
+                "reg_no": stud.reg_no, 
+                "exp": datetime.datetime.utcnow() + datetime.timedelta(minutes=30)
+            },
+            app.config['SECRET_KEY']
+            )
+            return jsonify({'token': token.decode('UTF-8')})
+
+    return make_response('Login Error, Check your password', 401, {'WWW-Authentication': 'Basic realm="Login required"'})
+
+
 # student route
 @app.route('/student/', methods=['POST'])
-def create_new_student():
+@get_authorization
+def create_new_student(current_student):
+    # only team lead can create new student
+    if not current_student.is_team_lead:
+            return jsonify({"message": "Cannot perform that function"})
+
     data = request.get_json()
-    new_student_regno = data['reg_no']
-    new_student_username = data['username']
-    new_student_password= generate_password_hash(data['reg_no'], method='sha256')
-    new_student_courses = str(data['courses']).upper()
+    # If username and password are not supplied
+    if not 'username' in data or not 'password' in data:
+         return jsonify({
+        "message": "Incomplete Data",
+        "Data" : [],
+        "No of Registered Courses": []
+        }), 401
+    else:
+        new_student_regno = str(uuid.uuid4())
+        new_student_username = data['username']
+        new_student_password= generate_password_hash(data['password'], method='sha256')
+
+    if not 'courses' in data:
+        new_student_courses = []
+    else:
+        new_student_courses = str(data['courses']).upper()
+        
     if not 'is_team_lead' in data:
         new_student_team_lead = False
     else:
@@ -45,38 +122,49 @@ def create_new_student():
         db.session.commit()
         message = "New Students Registered"
     except:
-        message = "Could Not Register The Student"
+        message = "Could Not Register The Student."
     
-    new_student = Student.query.filter_by(reg_no=new_student_regno).first()
-    if not new_student:
-        message += "\n Could not Fetch student details"
+    try:
+        new_student = Student.query.filter_by(reg_no=new_student_regno).first()
+        student_data = {}
+        student_data['id'] = new_student.id
+        student_data['reg_no'] = new_student.reg_no
+        student_data['username'] = new_student.username
+        student_data['password'] = new_student.password
+        student_data['is_team_lead'] = new_student.is_team_lead
+        
+        if not 'courses' in new_student:
+            student_data['courses'] = []
+            no_courses = 0
+        else:
+            courses = new_student.courses.split(',')
+            student_data['courses'] = [course.strip() for course in courses ]
+            no_courses = len(student_data['courses'])
+            
+    except:
+        message += " Hence Could not Fetch student details"
         student_data={}
-
-    student_data = {}
-    student_data['id'] = new_student.id
-    student_data['reg_no'] = new_student.reg_no
-    student_data['username'] = new_student.username
-    student_data['password'] = new_student.password
-    courses = new_student.courses.split(',')
-    student_data['courses'] = [course.strip() for course in courses ]
-    student_data['is_team_lead'] = new_student.is_team_lead
-    
+        no_courses = 0
+        
     return jsonify({
     "message": message,
     "Data" : student_data,
-    "No of Registered Courses": len(courses)
+    "No of Registered Courses": no_courses
     })
 
 
 
 
 @app.route('/student/', methods=['GET'])
-def get_all_students():
-    
+@get_authorization
+def get_all_students(current_student):
+    if not current_student.is_team_lead:
+            return jsonify({"message": "Cannot perform that function"})
     students = Student.query.all()
     output=[]
+    count =0
     if not students:
-        message = "\n Could not Fetch student details"
+        message = "Could not Fetch student details"
     else:
         message = "List of Registered Students"
         count = len(students)
@@ -86,8 +174,10 @@ def get_all_students():
             student_data['reg_no'] = student.reg_no
             student_data['username'] = student.username
             student_data['password'] = student.password
-            # if students.courses:
-            courses = student.courses.split(',')
+            if not 'courses' in students:
+                courses = []
+            else:
+                courses = student.courses.split(',')
             student_data['courses'] = [course.strip() for course in courses ]
             student_data['is_team_lead'] = student.is_team_lead
             output.append(student_data)
@@ -102,9 +192,11 @@ def get_all_students():
 
 
 @app.route('/student/<stud_reg_no>', methods=['GET'])
-def get_one_student(stud_reg_no):
-    
-    new_student = Student.query.filter_by(reg_no=stud_reg_no).first()
+@get_authorization
+def get_one_student(current_student, stud_reg_no):
+    if not current_student.is_team_lead:
+            return jsonify({"message": "Cannot perform that function"})
+    new_student = Student.query.filter_by(reg_no=stud_reg_no).first() or Student.query.filter_by(username=stud_reg_no).first()
     if not new_student:
         message = "Could not Fetch student details"
         student_data={}
@@ -128,9 +220,11 @@ def get_one_student(stud_reg_no):
 
 
 @app.route('/student/<reg_no>', methods=['PUT'])
-def make_student_team_lead(reg_no):
-    
-    student = Student.query.filter_by(reg_no=reg_no).first()
+@get_authorization
+def make_student_team_lead(current_student, reg_no):
+    if not current_student.is_team_lead:
+            return jsonify({"message": "Cannot perform that function"})  
+    student = Student.query.filter_by(reg_no=reg_no).first() or Student.query.filter_by(username=reg_no).first()
     if not student:
         message = "Could not Fetch student details"
            
@@ -145,10 +239,12 @@ def make_student_team_lead(reg_no):
     
     })
 
-@app.route('/student/<reg_no>/courses', methods=['GET'])
-def get_student_courses(reg_no):
-    
-    student = Student.query.filter_by(reg_no=reg_no).first()
+@app.route('/student/courses', methods=['GET'])
+@get_authorization
+def get_student_courses( current_student):
+    # if not current_student.is_team_lead:
+    #         return jsonify({"message": "Cannot perform that function"})
+    student = Student.query.filter_by(reg_no=current_student.reg_no).first()
     if not student:
         message = "Could not Fetch student details"
         count = 0
@@ -168,10 +264,11 @@ def get_student_courses(reg_no):
     
     })
 
-@app.route('/student/<reg_no>/courses', methods=['POST'])
-def register_student_courses(reg_no):
+@app.route('/student/courses', methods=['POST'])
+@get_authorization
+def register_student_courses(current_student):
     
-    student = Student.query.filter_by(reg_no=reg_no).first()
+    student = Student.query.filter_by(reg_no=current_student.reg_no).first()
     if not student:
         message = "Could not Fetch student details"
         count = 0
@@ -227,7 +324,11 @@ def register_student_courses(reg_no):
 #     return ""
 
 @app.route('/student/<reg_no>', methods=['DELETE'])
-def remove_student(reg_no):
+@get_authorization
+def remove_student(current_student, reg_no):
+    if not current_student.is_team_lead:
+            return jsonify({"message": "Cannot perform that function"})  
+   
     student = Student.query.filter_by(reg_no=reg_no).first()
     if not student:
         message = "Could not Fetch student details"
@@ -269,5 +370,8 @@ def remove_course(course_code):
     return ""
 
 if __name__ == "__main__":
-    db.create_all()
+    # db.create_all()
+    # # admin_user= Student(reg_no= "admin", username="admin", password=generate_password_hash("admin", method='sha256'), is_team_lead = True)
+    # # db.session.add(admin_user)
+    # # db.session.commit()
     app.run(debug=True)
